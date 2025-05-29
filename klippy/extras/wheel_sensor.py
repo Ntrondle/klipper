@@ -48,7 +48,11 @@ class WheelSensor:
     # ------------------------------------------------------------------
     def get_status(self, eventtime):
         freq = self._freq_counter.get_frequency()
-        rpm  = freq * 30.0 / self.ppr   #  Hz → RPM
+        if freq is None:
+            rpm = None
+        else:
+            rpm = freq * 60.0 / self.ppr   # Hz → RPM (60 sec/min)
+        LOG.debug("wheel_sensor '%s': freq=%s rpm=%s", self.name, freq, rpm)
         return {'rpm': rpm}
 
 # Klipper calls this when it sees [wheel_sensor ...]
