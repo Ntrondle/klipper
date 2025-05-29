@@ -1,49 +1,28 @@
 #!/usr/bin/env python3
+"""rpm_watch.py – lightweight CLI RPM monitor for Moonraker
+
+   Usage:
+       python3 rpm_watch.py                 # localhost, spool_sensor, 0.5 s
+       python3 rpm_watch.py <ip> <obj> <dt> # custom ip, object, interval
 """
-track_rpm_poll.py – simple HTTP poller for Klipper/Moonraker
+import sys, time, json, urllib.request, urllib.parse, datetime as dt
 
-* Polls Moonraker /printer/objects/query?objects=spool_sensor
-* Prints RPM to stdout
-* Appends the same line to /tmp/printer_rpm.log
-"""
-
-import time
-import requests
-import json
-import datetime as dt
-
-# ─── USER SETTINGS ───────────────────────────────────────────────
-PRINTER_IP   = "localhost"          # or "192.168.x.y"
-OBJ_NAME     = "spool_sensor"       # must match printer.cfg section name
-INTERVAL_S   = 0.2                  # poll period
-LOG_PATH     = "/tmp/printer_rpm.log"
-# ─────────────────────────────────────────────────────────────────
-
-URL = f"http://{PRINTER_IP}/printer/objects/query"
-PARAMS = {"objects": OBJ_NAME}
+ip         = sys.argv[1] if len(sys.argv) > 1 else "localhost"
+obj        = sys.argv[2] if len(sys.argv) > 2 else "spool_sensor"
+interval   = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5
+url        = f"http://{ip}/printer/objects/query?objects={obj}"
 
 def fetch_rpm():
-    try:
-        r = requests.get(URL, params=PARAMS, timeout=1.0)
-        r.raise_for_status()
-        data = r.json()
-        return data["result"]["status"][OBJ_NAME]["rpm"]
-    except Exception as e:
-        return None
+    with urllib.request.urlopen(url, timeout=2) as f:
+        data = json.load(f)
+    return data["result"]["status"][obj]["rpm"]
 
-def main():
-    print(f"Polling {OBJ_NAME}.rpm every {INTERVAL_S}s … Ctrl-C to stop.")
-    with open(LOG_PATH, "a", buffering=1) as flog:
-        while True:
-            rpm = fetch_rpm()
-            ts  = dt.datetime.now().strftime("%H:%M:%S")
-            if rpm is not None:
-                line = f"[{ts}] RPM: {rpm:7.2f}"
-            else:
-                line = f"[{ts}] RPM: null"
-            print(line)
-            flog.write(line + "\n")
-            time.sleep(INTERVAL_S)
-
-if __name__ == "__main__":
-    main()
+print(f"Watching {obj}.rpm on {ip} every {interval}s …  Ctrl-C to exit.")
+try:
+    while True:
+        rpm = fetch_rpm()
+        ts  = dt.datetime.now().strftime("%H:%M:%S")
+        print(f"[{ts}] {rpm if rpm is not None else 'null':>8}")
+        time.sleep(interval)
+except KeyboardInterrupt:
+    print("\nExiting.")
