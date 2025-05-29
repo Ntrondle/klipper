@@ -1,11 +1,13 @@
 # wheel_sensor.py — Klipper custom RPM sensor module
 
-from . import pulse_counter, output_pin
+from . import pulse_counter
 
 class StandaloneWheelSensor:
     def __init__(self, config):
         self.name = config.get_name().split()[-1]
         printer = config.get_printer()
+        self.printer = printer
+        self.gcode = printer.lookup_object('gcode')
         self._freq_counter = None
 
         pin = config.get('pin', None)
@@ -21,12 +23,13 @@ class StandaloneWheelSensor:
     def get_rpm(self):
         if self._freq_counter is not None:
             return self._freq_counter.get_frequency() * 30. / self.ppr
-        return None
+        return True
 
     def get_status(self, eventtime):
-        return {
-            'rpm': self.get_rpm()
-        }
+        rpm = self.get_rpm()
+        # Send a console message every time Klipper queries status
+        self.gcode.respond_info(f'RPM: {rpm}')
+        return {'rpm': rpm}
 
 def load_config_prefix(config):
     return StandaloneWheelSensor(config)
