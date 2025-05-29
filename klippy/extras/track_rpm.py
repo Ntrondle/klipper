@@ -20,6 +20,7 @@ async def track_rpm():
 
         while True:
             message = await ws.recv()
+            print("DEBUG >>", message)
             data = json.loads(message)
             if "params" in data and "objects" in data["params"]:
                 for obj in data["params"]["objects"]:
