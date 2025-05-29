@@ -13,9 +13,16 @@ interval   = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5
 url        = f"http://{ip}/printer/objects/query?objects={obj}"
 
 def fetch_rpm():
-    with urllib.request.urlopen(url, timeout=2) as f:
-        data = json.load(f)
-    return data["result"]["status"][obj]["rpm"]
+    try:
+        with urllib.request.urlopen(url, timeout=2) as f:
+            data = json.load(f)
+        # Safely walk the JSON structure
+        status = data.get("result", {}).get("status", {})
+        rpm = status.get(obj, {}).get("rpm")
+        return rpm
+    except Exception as e:
+        # Network error or JSON parse problem – return None so caller prints 'null'
+        return None
 
 print(f"Watching {obj}.rpm on {ip} every {interval}s …  Ctrl-C to exit.")
 try:
