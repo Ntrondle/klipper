@@ -1,26 +1,49 @@
-import asyncio, websockets, json
+#!/usr/bin/env python3
+"""
+track_rpm_poll.py – simple HTTP poller for Klipper/Moonraker
 
-WS = "ws://localhost/websocket"        # adjust IP if needed
-OBJ = "spool_sensor"                   # name from printer.cfg
+* Polls Moonraker /printer/objects/query?objects=spool_sensor
+* Prints RPM to stdout
+* Appends the same line to /tmp/printer_rpm.log
+"""
 
-async def track():
-    async with websockets.connect(WS) as ws:
-        # ---- subscribe (must include jsonrpc) ----
-        await ws.send(json.dumps({
-            "jsonrpc": "2.0",
-            "method": "printer.objects.subscribe",
-            "params": { "objects": { OBJ: ["rpm"] } },
-            "id": 1
-        }))
-        print("Subscribed; waiting for RPM...")
+import time
+import requests
+import json
+import datetime as dt
 
+# ─── USER SETTINGS ───────────────────────────────────────────────
+PRINTER_IP   = "localhost"          # or "192.168.x.y"
+OBJ_NAME     = "spool_sensor"       # must match printer.cfg section name
+INTERVAL_S   = 0.2                  # poll period
+LOG_PATH     = "/tmp/printer_rpm.log"
+# ─────────────────────────────────────────────────────────────────
+
+URL = f"http://{PRINTER_IP}/printer/objects/query"
+PARAMS = {"objects": OBJ_NAME}
+
+def fetch_rpm():
+    try:
+        r = requests.get(URL, params=PARAMS, timeout=1.0)
+        r.raise_for_status()
+        data = r.json()
+        return data["result"]["status"][OBJ_NAME]["rpm"]
+    except Exception as e:
+        return None
+
+def main():
+    print(f"Polling {OBJ_NAME}.rpm every {INTERVAL_S}s … Ctrl-C to stop.")
+    with open(LOG_PATH, "a", buffering=1) as flog:
         while True:
-            msg = json.loads(await ws.recv())
-            if msg.get("method") == "notify_printer_objects":
-                # params["objects"] is a LIST of [name, {fields}]
-                for name, data in msg["params"]["objects"]:
-                    if name == OBJ and "rpm" in data:
-                        print(f"RPM: {data['rpm']:.1f}")
+            rpm = fetch_rpm()
+            ts  = dt.datetime.now().strftime("%H:%M:%S")
+            if rpm is not None:
+                line = f"[{ts}] RPM: {rpm:7.2f}"
+            else:
+                line = f"[{ts}] RPM: null"
+            print(line)
+            flog.write(line + "\n")
+            time.sleep(INTERVAL_S)
 
 if __name__ == "__main__":
-    asyncio.run(track())
+    main()
