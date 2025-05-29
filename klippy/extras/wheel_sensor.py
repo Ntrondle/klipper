@@ -16,7 +16,7 @@ class StandaloneWheelSensor:
             self._freq_counter = pulse_counter.FrequencyCounter(
                 printer, pin, sample_time, poll_time)
 
-        printer.add_object(f"{self.name}_sensor", self)
+        printer.add_object(self.name, self)
 
     def get_rpm(self):
         if self._freq_counter is not None:

@@ -1,33 +1,26 @@
-import asyncio
-import websockets
-import json
+import asyncio, websockets, json
 
-MOONRAKER_WS = "ws://localhost/websocket"
-SENSOR_NAME = "spool_sensor"
+WS = "ws://localhost/websocket"        # adjust IP if needed
+OBJ = "spool_sensor"                   # name from printer.cfg
 
-async def track_rpm():
-    async with websockets.connect(MOONRAKER_WS) as ws:
+async def track():
+    async with websockets.connect(WS) as ws:
+        # ---- subscribe (must include jsonrpc) ----
         await ws.send(json.dumps({
+            "jsonrpc": "2.0",
             "method": "printer.objects.subscribe",
-            "params": {
-                "objects": {
-                    SENSOR_NAME: ["rpm"]
-                }
-            },
+            "params": { "objects": { OBJ: ["rpm"] } },
             "id": 1
         }))
-        print(f"Subscribed to {SENSOR_NAME}.rpm")
+        print("Subscribed; waiting for RPM...")
 
         while True:
-            message = await ws.recv()
-            print("DEBUG >>", message)
-            data = json.loads(message)
-            if "params" in data and "objects" in data["params"]:
-                for obj in data["params"]["objects"]:
-                    if SENSOR_NAME in obj:
-                        rpm = obj[SENSOR_NAME].get("rpm")
-                        if rpm is not None:
-                            print(f"RPM: {rpm:.1f}")
+            msg = json.loads(await ws.recv())
+            if msg.get("method") == "notify_printer_objects":
+                # params["objects"] is a LIST of [name, {fields}]
+                for name, data in msg["params"]["objects"]:
+                    if name == OBJ and "rpm" in data:
+                        print(f"RPM: {data['rpm']:.1f}")
 
 if __name__ == "__main__":
-    asyncio.run(track_rpm())
+    asyncio.run(track())
