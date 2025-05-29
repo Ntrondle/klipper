@@ -41,19 +41,28 @@ class WheelSensor:
         LOG.info("wheel_sensor '%s': pin=%s ppr=%d poll=%g sample=%g",
                  self.name, pin, self.ppr, poll_time, sample_time)
 
+        # Continuous updater so RPM is available without external polling
+        self.rpm = 0.0
+        self.reactor = printer.get_reactor()
+        self.reactor.register_timer(self._tick, poll_time)
+
         printer.add_object(self.name, self)
 
     # ------------------------------------------------------------------
     # Public Klipper API
     # ------------------------------------------------------------------
     def get_status(self, eventtime):
+        LOG.debug("wheel_sensor '%s': rpm=%.2f", self.name, self.rpm)
+        return {'rpm': self.rpm}
+
+    def _tick(self, eventtime):
+        """Periodic callback that keeps rpm updated."""
         freq = self._freq_counter.get_frequency()
         if freq is None:
-            rpm = None
+            self.rpm = 0.0
         else:
-            rpm = freq * 60.0 / self.ppr   # Hz → RPM (60 sec/min)
-        LOG.debug("wheel_sensor '%s': freq=%s rpm=%s", self.name, freq, rpm)
-        return {'rpm': rpm}
+            self.rpm = freq * 60.0 / self.ppr
+        return eventtime + 0.2  # update every 0.2 s
 
 # Klipper calls this when it sees [wheel_sensor ...]
 def load_config_prefix(config):
