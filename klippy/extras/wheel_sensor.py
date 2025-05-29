@@ -1,6 +1,6 @@
 # wheel_sensor.py — Klipper custom RPM sensor module
 
-from klippy.extras import pulse_counter
+from . import pulse_counter, output_pin
 
 class StandaloneWheelSensor:
     def __init__(self, config):
