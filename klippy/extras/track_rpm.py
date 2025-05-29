@@ -21,11 +21,12 @@ async def track_rpm():
         while True:
             message = await ws.recv()
             data = json.loads(message)
-            if "params" in data:
-                update = data["params"].get("objects", {}).get(SENSOR_NAME, {})
-                rpm = update.get("rpm")
-                if rpm is not None:
-                    print(f"RPM: {rpm:.1f}")
+            if "params" in data and "objects" in data["params"]:
+                for obj in data["params"]["objects"]:
+                    if SENSOR_NAME in obj:
+                        rpm = obj[SENSOR_NAME].get("rpm")
+                        if rpm is not None:
+                            print(f"RPM: {rpm:.1f}")
 
 if __name__ == "__main__":
     asyncio.run(track_rpm())
