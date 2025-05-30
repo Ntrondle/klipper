@@ -1,56 +1,124 @@
-"""
-StandaloneWheelSensor
----------------------
+# Wheel closed-loop PWM controller
+#
+# Usage in printer.cfg:
+#
+#   [wheel_control spooler]
+#   tach_object: spool_sensor_sensor     # object that reports wheel_rpm
+#   motor_pin:  Turtle_1:PB0             # PWM pin driving N20
+#   wheel_mm_per_rev: 94.2               # spool circumference
+#   pulses_per_rev: 8
+#   gear_ratio: 0.6                      # wheel / motor
+#   kp: 0.15
+#   ki: 2.0
+#   update_period: 0.05                  # 50 ms
+#   default_target_rpm: 600
+#
+# Provides G-codes:
+#   SET_SPOOLER_RPM RPM=<r>
+#   MOVE_SPOOL_MM LEN=<mm>
+#
+from . import pulse_counter, output_pin
+import logging, math
 
-Config keys (all optional except *pin*):
-  pin: ^Turtle_1:PA2              # GPIO attached to Hall-output
-  pulses_per_rev: 8               # magnets per wheel revolution
-  gear_ratio: 20/12 = 1.667       # motor / wheel ratio (float, default 1.0)
-
-Returned status:
-  {'wheel_rpm': <float>, 'motor_rpm': <float>}
-"""
-from . import pulse_counter
-
-class StandaloneWheelSensor:
+class WheelControl:
     def __init__(self, config):
-        self.name = config.get_name().split()[-1]
-        printer = config.get_printer()
-        self.printer = printer
-        self.gcode = printer.lookup_object('gcode')
-        self._freq_counter = None
+        self.printer = pr = config.get_printer()
+        self.reactor = pr.get_reactor()
+        self.gcode   = pr.lookup_object('gcode')
+        LOG = logging.getLogger("wheel_control")
 
-        pin = config.get('pin', None)
-        if pin is not None:
-            self.ppr = config.getint('pulses_per_rev', 6, minval=1)
-            self.gear_ratio = config.getfloat('gear_ratio', 1.0, above=0.)
-            poll_time = config.getfloat('poll_interval', 0.0015, above=0.)
-            sample_time = config.getfloat('sample_time', 0.2, above=0.01)
-            self._freq_counter = pulse_counter.FrequencyCounter(
-                printer, pin, sample_time, poll_time)
+        # ----- config -----
+        self.tach_name  = config.get('tach_object')
+        self.mm_rev     = config.getfloat('wheel_mm_per_rev')
+        self.ppr        = config.getint('pulses_per_rev')
+        self.ratio      = config.getfloat('gear_ratio', 1.0)
+        self.kp         = config.getfloat('kp', .1, above=0)
+        self.ki         = config.getfloat('ki', 1.0, above=0)
+        self.dt         = config.getfloat('update_period', 0.05, above=.02)
+        self.target_rpm = config.getfloat('default_target_rpm', 600, above=1)
 
-        printer.add_object(f"{self.name}_sensor", self)
+        # ----- motor pin -----
+        ppins = pr.lookup_object('pins')
+        self.motor = ppins.setup_pin('pwm', config.get('motor_pin'))
+        self.motor.setup_cycle_time(0.010, False)
 
-    def _compute_rpm(self):
-        # Returns tuple (wheel_rpm, motor_rpm)
-        if self._freq_counter is None:
-            return None, None
-        freq = self._freq_counter.get_frequency()  # Hz pulses/sec
-        if freq is None:
-            return None, None
-        wheel_rpm = freq * 60.0 / self.ppr        # Hz → RPM
-        motor_rpm = wheel_rpm * self.gear_ratio
-        return wheel_rpm, motor_rpm
+        # ----- tach object -----
+        self.tach = pr.lookup_object(self.tach_name)
 
+        # ----- PI state -----
+        self.integral = 0.0
+        self.pwm_out  = 0.0
+
+        # ----- move tracker -----
+        self.move_active = False
+        self.pulses_goal = 0
+        self.pulses_acc  = 0
+        self.prev_count  = 0
+
+        # start control loop
+        self.reactor.register_timer(self._loop, self.reactor.NOW + self.dt)
+
+        # g-codes
+        self.gcode.register_command("SET_SPOOLER_RPM", self.cmd_set_rpm,
+                                    desc="Set closed-loop target rpm")
+        self.gcode.register_command("MOVE_SPOOL_MM", self.cmd_move_mm,
+                                    desc="Move spool X mm then stop")
+
+        LOG.info("wheel_control: ready (tach=%s pin=%s)", self.tach_name,
+                 config.get('motor_pin'))
+
+    # ------------------ control loop ------------------
+    def _loop(self, eventtime):
+        rpm = self.tach.get_status(eventtime)['wheel_rpm']
+        if rpm is None:
+            return eventtime + self.dt      # wait for first sample
+
+        # PI control
+        err = self.target_rpm - rpm
+        self.integral += err * self.dt
+        pwm = self.kp * err + self.ki * self.integral
+        pwm = max(0.0, min(1.0, pwm))
+        self.motor.set_pwm(eventtime, pwm)
+        self.pwm_out = pwm
+
+        # pulse counting for MOVE_SPOOL_MM
+        if self.move_active:
+            freq = self.tach._freq_counter.get_frequency()
+            pulses = freq * self.dt
+            self.pulses_acc += pulses
+            if self.pulses_acc >= self.pulses_goal:
+                self.target_rpm = 0
+                self.move_active = False
+                self.integral = 0.0
+                self.gcode.respond_info("MOVE_SPOOL_MM complete")
+
+        return eventtime + self.dt
+
+    # ------------------ g-codes ------------------
+    def cmd_set_rpm(self, gcmd):
+        self.target_rpm = gcmd.get_float("RPM", minval=0.)
+        self.integral = 0.0
+        self.gcode.respond_info(f"Target rpm set to {self.target_rpm:.1f}")
+
+    def cmd_move_mm(self, gcmd):
+        mm = gcmd.get_float("LEN", minval=0.)
+        wheel_rev = mm / self.mm_rev
+        self.pulses_goal = wheel_rev * self.ppr
+        self.pulses_acc  = 0
+        self.move_active = True
+        self.target_rpm = gcmd.get_float("RPM", self.target_rpm, minval=1.)
+        self.integral = 0.0
+        self.gcode.respond_info(
+            f"Moving spool {mm:.1f} mm → goal pulses {self.pulses_goal:.0f}")
+
+    # ------------------ Klipper status ------------------
     def get_status(self, eventtime):
-        wheel_rpm, motor_rpm = self._compute_rpm()
-        # Print only when wheel rpm non‑zero
-        if wheel_rpm:
-            self.gcode.respond_info(f'Wheel RPM: {wheel_rpm:.1f}  |  Motor RPM: {motor_rpm:.1f}')
         return {
-            'wheel_rpm': wheel_rpm,
-            'motor_rpm': motor_rpm,
+            'target_rpm': self.target_rpm,
+            'pwm':        self.pwm_out,
+            'integral':   self.integral,
+            'goal_pulses': self.pulses_goal if self.move_active else 0,
         }
 
-def load_config_prefix(config):
-    return StandaloneWheelSensor(config)
+def load_config(config):
+    return WheelControl(config)
