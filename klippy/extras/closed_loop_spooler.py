@@ -44,6 +44,7 @@ class ClosedLoopSpooler:
         # ── Object lookup ────────────────────────────────────────────────
         # Wheel sensor object is exported as "<name>_sensor"
         wheel_obj = self.printer.lookup_object(wheel_name)
+        print(f"[DEBUG] ClosedLoopSpooler: Looking up wheel sensor object with name: '{wheel_name}'")
         if not isinstance(wheel_obj, StandaloneWheelSensor):
             raise error(f"{wheel_name} is not a StandaloneWheelSensor instance")
         self.wheel = wheel_obj
