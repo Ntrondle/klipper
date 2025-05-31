@@ -5,6 +5,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from configfile import error
+from wheel_sensor import StandaloneWheelSensor
 
 
 class ClosedLoopSpooler:
@@ -42,7 +43,10 @@ class ClosedLoopSpooler:
 
         # ── Object lookup ────────────────────────────────────────────────
         # Wheel sensor object is exported as "<name>_sensor"
-        self.wheel = self.printer.lookup_object(wheel_name)
+        wheel_obj = self.printer.lookup_object(wheel_name)
+        if not isinstance(wheel_obj, StandaloneWheelSensor):
+            raise error(f"{wheel_name} is not a StandaloneWheelSensor instance")
+        self.wheel = wheel_obj
 
         # Lane stepper object exported as "AFC_stepper <lane>"
         lane_obj = self.printer.lookup_object(f"AFC_stepper {lane_name}")
