@@ -1,26 +1,32 @@
-import asyncio, websockets, json
+# wheel_sensor.py — Klipper custom RPM sensor module
 
-WS = "ws://localhost/websocket"        # adjust IP if needed
-OBJ = "spool_sensor"                   # name from printer.cfg
+from . import pulse_counter, output_pin
 
-async def track():
-    async with websockets.connect(WS) as ws:
-        # ---- subscribe (must include jsonrpc) ----
-        await ws.send(json.dumps({
-            "jsonrpc": "2.0",
-            "method": "printer.objects.subscribe",
-            "params": { "objects": { OBJ: ["rpm"] } },
-            "id": 1
-        }))
-        print("Subscribed; waiting for RPM...")
+class StandaloneWheelSensor:
+    def __init__(self, config):
+        self.name = config.get_name().split()[-1]
+        printer = config.get_printer()
+        self._freq_counter = None
 
-        while True:
-            msg = json.loads(await ws.recv())
-            if msg.get("method") == "notify_printer_objects":
-                # params["objects"] is a LIST of [name, {fields}]
-                for name, data in msg["params"]["objects"]:
-                    if name == OBJ and "rpm" in data:
-                        print(f"RPM: {data['rpm']:.1f}")
+        pin = config.get('pin', None)
+        if pin is not None:
+            self.ppr = config.getint('pulses_per_rev', 6, minval=1)
+            poll_time = config.getfloat('poll_interval', 0.0015, above=0.)
+            sample_time = config.getfloat('sample_time', 0.2, above=0.01)
+            self._freq_counter = pulse_counter.FrequencyCounter(
+                printer, pin, sample_time, poll_time)
 
-if __name__ == "__main__":
-    asyncio.run(track())
+        printer.add_object(self.name, self)
+
+    def get_rpm(self):
+        if self._freq_counter is not None:
+            return self._freq_counter.get_frequency() * 30. / self.ppr
+        return None
+
+    def get_status(self, eventtime):
+        return {
+            'rpm': self.get_rpm()
+        }
+
+def load_config_prefix(config):
+    return StandaloneWheelSensor(config)
