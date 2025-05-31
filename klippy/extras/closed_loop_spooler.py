@@ -24,7 +24,8 @@ class ClosedLoopSpooler:
         self.reactor  = self.printer.get_reactor()
 
         # ── Mandatory config ──────────────────────────────────────────────
-        wheel_name = config.get('wheel_sensor')
+        wheel_shortname = config.get('wheel_sensor')
+        wheel_name = f"wheel_sensor {wheel_shortname}"
         lane_name  = config.get('lane')
         self.dir   = config.get('motor_direction', 'fwd').lower()
         if self.dir not in ('fwd', 'rwd'):
