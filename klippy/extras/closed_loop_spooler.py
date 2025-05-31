@@ -23,6 +23,8 @@ class ClosedLoopSpooler:
         # Core references
         self.printer  = config.get_printer()
         self.reactor  = self.printer.get_reactor()
+        self.printer.register_event_handler("klippy:ready", self._start_loop)
+
 
         # ── Mandatory config ──────────────────────────────────────────────
         wheel_shortname = config.get('wheel_sensor')
@@ -61,6 +63,9 @@ class ClosedLoopSpooler:
         self._pwm        = self.min_pwm
 
         # Kick off the control loop
+   
+
+    def _start_loop(self):
         self.reactor.register_timer(self._update, self.reactor.NOW)
 
     # ───────────────────────── helpers ───────────────────────────────────
