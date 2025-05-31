@@ -19,7 +19,6 @@ class StandaloneWheelSensor:
         self.printer = printer
         self.gcode = printer.lookup_object('gcode')
         self._freq_counter = None
-        self.current_pwm = None
 
         pin = config.get('pin', None)
         if pin is not None:
@@ -30,7 +29,7 @@ class StandaloneWheelSensor:
             self._freq_counter = pulse_counter.FrequencyCounter(
                 printer, pin, sample_time, poll_time)
 
-        printer.add_object(config.get_name(), self)
+        printer.add_object(f"{self.name}_sensor", self)
 
     def _compute_rpm(self):
         # Returns tuple (wheel_rpm, motor_rpm)
@@ -47,19 +46,10 @@ class StandaloneWheelSensor:
         wheel_rpm, motor_rpm = self._compute_rpm()
         # Print only when wheel rpm non‑zero
         if wheel_rpm:
-            pwm = self.current_pwm
-            if pwm is not None:
-                self.gcode.respond_info(
-                    f'Wheel RPM: {wheel_rpm:.1f}  |  Motor RPM: {motor_rpm:.1f}  |  PWM: {pwm:.3f}'
-                )
-            else:
-                self.gcode.respond_info(
-                    f'Wheel RPM: {wheel_rpm:.1f}  |  Motor RPM: {motor_rpm:.1f}'
-                )
+            self.gcode.respond_info(f'Wheel RPM: {wheel_rpm:.1f}  |  Motor RPM: {motor_rpm:.1f}')
         return {
             'wheel_rpm': wheel_rpm,
             'motor_rpm': motor_rpm,
-            'pwm': self.current_pwm,
         }
 
 def load_config_prefix(config):
