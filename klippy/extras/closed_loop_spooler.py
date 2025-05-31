@@ -88,6 +88,7 @@ class ClosedLoopSpooler:
         # Clamp & apply
         self._pwm = max(self.min_pwm, min(self.max_pwm, self._pwm + delta))
         self.motor.set_pwm(self._pwm)
+        self.wheel.current_pwm = self._pwm
 
         return eventtime + self.sample_t
 
