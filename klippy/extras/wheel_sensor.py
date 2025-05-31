@@ -51,6 +51,10 @@ class StandaloneWheelSensor:
             'wheel_rpm': wheel_rpm,
             'motor_rpm': motor_rpm,
         }
+    
+    def get_rpm(self):
+        """Return (wheel_rpm, motor_rpm) tuple for external use."""
+        return self._compute_rpm()
 
 def load_config_prefix(config):
     return StandaloneWheelSensor(config)
