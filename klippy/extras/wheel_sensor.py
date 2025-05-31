@@ -29,7 +29,7 @@ class StandaloneWheelSensor:
             self._freq_counter = pulse_counter.FrequencyCounter(
                 printer, pin, sample_time, poll_time)
 
-        printer.add_object(f"{self.name}_sensor", self)
+        printer.add_object(config.get_name(), self)
 
     def _compute_rpm(self):
         # Returns tuple (wheel_rpm, motor_rpm)
