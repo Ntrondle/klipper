@@ -5,7 +5,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from configfile import error
-from wheel_sensor import StandaloneWheelSensor
+from .wheel_sensor import StandaloneWheelSensor
 
 
 class ClosedLoopSpooler:
